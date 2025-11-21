@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 from datetime import datetime
 
+
 @dataclass
 class WeatherTimeSlot:
     time_of_day: str
@@ -12,6 +13,7 @@ class WeatherTimeSlot:
     perceived_temperature: Optional[int] = None
     wind_speed: Optional[str] = None
 
+
 @dataclass
 class DailyWeather:
     date: datetime
@@ -20,6 +22,7 @@ class DailyWeather:
     time_slots: List[WeatherTimeSlot]
     average_daylight_temperature: Optional[float] = None
     pressure_change_warning: Optional[str] = None
+
 
 @dataclass
 class WeatherForecast:

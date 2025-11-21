@@ -1,3 +1,3 @@
-from parsers.parser import YandexWeatherParser
-from parsers.processors import WeatherDataProcessor
-from parsers.excel_generator import ExcelGenerator
+from parser.parser import YandexWeatherParser
+from parser.processors import WeatherDataProcessor
+from parser.excel_generator import ExcelGenerator
