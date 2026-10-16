@@ -1,5 +1,5 @@
 import re
-from typing import Optional
+from typing import Optional, Tuple
 from datetime import datetime, timedelta
 
 
@@ -32,6 +32,9 @@ def extract_pressure(text: str) -> int:
     if match:
         return int(match.group(1))
     match = re.search(r"давление[^\d]*(\d{3,4})", text, re.IGNORECASE)
+    if match:
+        return int(match.group(1))
+    match = re.search(r"\b(\d{3,4})\b", text)
     if match:
         return int(match.group(1))
     return 750
@@ -96,3 +99,28 @@ def parse_date(date_text: str, day_index: int) -> datetime:
         return today + timedelta(days=2)
     else:
         return today + timedelta(days=day_index)
+
+
+def parse_hourly_hidden(text: str) -> Tuple[Optional[str], Optional[int]]:
+    phenomenon = None
+    feels = None
+    if not text:
+        return phenomenon, feels
+    phenomenon_match = re.search(
+        r"^\d{1,2}:\d{2}:\s*[+\-−]?\d+°,\s*(.+?),\s*Ощущается", text
+    )
+    if phenomenon_match:
+        phenomenon = phenomenon_match.group(1).strip()
+    feels_match = re.search(r"Ощущается как\s*([+\-−]?\d+)", text)
+    if feels_match:
+        feels = int(feels_match.group(1).replace("−", "-"))
+    return phenomenon, feels
+
+
+def parse_precipitation(text: str) -> Optional[int]:
+    if not text:
+        return None
+    match = re.search(r"(\d+)\s*%", text)
+    if match:
+        return int(match.group(1))
+    return None

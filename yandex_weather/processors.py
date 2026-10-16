@@ -1,7 +1,7 @@
 from typing import List
 import logging
-from parser.models import DailyWeather
-from config import PRESSURE_CHANGE_THRESHOLD
+from yandex_weather.models import DailyWeather
+from yandex_weather.config import PRESSURE_CHANGE_THRESHOLD
 
 logger = logging.getLogger(__name__)
 

@@ -4,14 +4,21 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 from typing import List, Optional, Tuple
 import logging
-from parser.models import WeatherForecast, DailyWeather, WeatherTimeSlot
-from config import YANDEX_WEATHER_BASE_URL, REQUEST_TIMEOUT, USER_AGENT
-from parser.utils import (
+from yandex_weather.models import (
+    WeatherForecast,
+    DailyWeather,
+    WeatherTimeSlot,
+    HourlyWeatherSlot,
+)
+from yandex_weather.config import YANDEX_WEATHER_BASE_URL, REQUEST_TIMEOUT, USER_AGENT
+from yandex_weather.utils import (
     extract_temperature,
     extract_pressure,
     extract_humidity,
     get_magnetic_status,
     parse_date,
+    parse_hourly_hidden,
+    parse_precipitation,
 )
 
 logger = logging.getLogger(__name__)
@@ -29,7 +36,6 @@ class YandexWeatherParser:
         )
 
     def get_city_url(self, city: str) -> str:
-        search_url = f"{YANDEX_WEATHER_BASE_URL}"
         city_slug = city.lower().replace(" ", "-")
         return f"{YANDEX_WEATHER_BASE_URL}/{city_slug}"
 
@@ -42,10 +48,17 @@ class YandexWeatherParser:
             response.encoding = "utf-8"
             soup = BeautifulSoup(response.text, "lxml")
             days = self._parse_forecast_days(soup)
+            hourly = self._parse_hourly(soup)
             forecast = WeatherForecast(
-                city=city, request_date=datetime.now(), days=days
+                city=city,
+                request_date=datetime.now(),
+                days=days,
+                hourly=hourly,
             )
-            logger.info(f"Успешно получен прогноз на {len(days)} дней")
+            logger.info(
+                f"Успешно получен прогноз на {len(days)} дней, "
+                f"почасовых слотов: {len(hourly)}"
+            )
             return forecast
         except requests.RequestException as e:
             logger.error(f"Ошибка при запросе к Яндекс.Погоде: {e}")
@@ -53,6 +66,15 @@ class YandexWeatherParser:
         except Exception as e:
             logger.error(f"Ошибка при парсинге данных: {e}")
             raise
+
+    def parse_hourly_weather(self, city: str) -> List[HourlyWeatherSlot]:
+        url = self.get_city_url(city)
+        logger.info(f"Запрос почасового прогноза для города: {city}, URL: {url}")
+        response = self.session.get(url, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        response.encoding = "utf-8"
+        soup = BeautifulSoup(response.text, "lxml")
+        return self._parse_hourly(soup)
 
     def _parse_forecast_days(self, soup: BeautifulSoup) -> List[DailyWeather]:
         days = []
@@ -273,3 +295,81 @@ class YandexWeatherParser:
         except Exception as e:
             logger.debug(f"Ошибка при парсинге временного слота {time_of_day}: {e}")
             return None
+
+    def _parse_hourly(self, soup: BeautifulSoup) -> List[HourlyWeatherSlot]:
+        hourly: List[HourlyWeatherSlot] = []
+        hourly_list = soup.find("ul", class_=re.compile(r"AppHourly_list"))
+        if not hourly_list:
+            logger.warning("Почасовой прогноз не найден на странице")
+            return hourly
+
+        items = hourly_list.find_all(
+            "li", class_=re.compile(r"AppHourlyItem_container")
+        )
+        for item in items:
+            try:
+                time_elem = item.find("time")
+                if not time_elem:
+                    continue
+                time_text = time_elem.get_text().strip()
+                # Метка смены суток (напр. "ср, 00:00") — начало следующего
+                # дня, дальше идут часы не текущего дня, останавливаемся.
+                if "," in time_text:
+                    break
+
+                time_match = re.search(r"\d{1,2}:\d{2}", time_text)
+                time_norm = time_match.group(0) if time_match else time_text
+
+                date_time_attr = time_elem.get("datetime")
+                dt = None
+                if date_time_attr:
+                    try:
+                        dt = datetime.fromisoformat(
+                            date_time_attr.replace("Z", "+00:00")
+                        )
+                    except ValueError:
+                        dt = None
+
+                main_elem = item.find(class_=re.compile(r"AppHourlyItem_main"))
+                temperature = (
+                    extract_temperature(main_elem.get_text())
+                    if main_elem
+                    else None
+                )
+                # Служебные метки (Восход/Закат) и прочие нетемпературные
+                # записи не содержат температуру — пропускаем.
+                if temperature is None:
+                    continue
+
+                secondary_elem = item.find(
+                    class_=re.compile(r"AppHourlyItem_secondary")
+                )
+                precipitation = parse_precipitation(
+                    secondary_elem.get_text() if secondary_elem else None
+                )
+                # Яндекс показывает вероятность осадков только при наличии
+                # осадков; для ясных часов считаем её равной 0.
+                if precipitation is None:
+                    precipitation = 0
+
+                hidden_elem = item.find(class_=re.compile(r"visuallyHidden"))
+                phenomenon = None
+                feels = None
+                if hidden_elem:
+                    phenomenon, feels = parse_hourly_hidden(hidden_elem.get_text())
+
+                hourly.append(
+                    HourlyWeatherSlot(
+                        time=time_norm,
+                        datetime=dt,
+                        temperature=temperature,
+                        perceived_temperature=feels,
+                        weather_phenomenon=phenomenon,
+                        precipitation_probability=precipitation,
+                    )
+                )
+            except Exception as e:
+                logger.debug(f"Ошибка при парсинге часового слота: {e}")
+                continue
+
+        return hourly

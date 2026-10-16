@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yandex_weather"
+version = "1.0.0"
+description = "Библиотека для парсинга прогноза погоды с Яндекс.Погоды (7 дней + почасовой прогноз)"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "Weather_Yandex" }]
+dependencies = [
+    "requests>=2.31.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=4.9.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["yandex_weather*"]
